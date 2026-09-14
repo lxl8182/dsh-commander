@@ -7,6 +7,8 @@ description: Use when the user asks Codex to direct or communicate with a comple
 
 你是主代理，DSH 是具备独立上下文、文件与命令工具、压缩和执行循环的外部代理。默认路由固定为 `deepseek-official / deepseek-flash`，凭据由 DSH 解析。主会话继续使用用户在 Codex 中选择的模型和登录方式。
 
+启动方式由 `~/.dsh-commander/config.json` 的 `dshLaunchMode` 控制：`npm` 默认使用 `npx @deepseek-ai/dsh@latest`，`source` 使用配置的 `dshRoot` 运行 `pnpm dsh`。source 模式需要已构建的 DSH checkout；npm 模式不需要 `dshRoot`。
+
 ## 工作流程
 
 1. 首次调用 `dsh_doctor` 确认配置。模型不可用时报告具体缺项，不更换供应商或模型。

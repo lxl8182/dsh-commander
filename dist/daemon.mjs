@@ -7340,6 +7340,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 var pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 var version = "0.1.0";
+var defaultDshPackage = "@deepseek-ai/dsh@latest";
 function loadConfig() {
   const stateDir = path.resolve(process.env.DSH_COMMANDER_HOME || path.join(os.homedir(), ".dsh-commander"));
   const configPath = process.env.DSH_COMMANDER_CONFIG || path.join(stateDir, "config.json");
@@ -7347,11 +7348,31 @@ function loadConfig() {
   const local = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf8")) : {};
   const config3 = { ...defaults, ...local, stateDir, configPath };
   config3.dshHome = path.resolve(config3.dshHome || process.env.DSH_HOME || path.join(os.homedir(), ".dsh"));
-  config3.dshRoot = path.resolve(config3.dshRoot);
+  config3.dshLaunchMode = normalizeLaunchMode(config3.dshLaunchMode, config3.dshRoot);
+  config3.dshRoot = optionalAbsolutePath(config3.dshRoot);
+  if (config3.dshLaunchMode === "npm") config3.dshRoot = void 0;
+  config3.dshPackage = optionalPackageSpec(config3.dshPackage || defaultDshPackage);
+  if (config3.dshLaunchMode === "source" && !config3.dshRoot) {
+    throw new Error("Source DSH launch mode requires an absolute dshRoot");
+  }
   for (const [key, min, max] of [["maxConcurrent", 1, 16], ["turnTimeoutMs", 1e3, 864e5], ["startupTimeoutMs", 1e3, 3e5]]) {
     if (!Number.isInteger(config3[key]) || config3[key] < min || config3[key] > max) throw new Error(`Invalid ${key}`);
   }
   return config3;
+}
+function normalizeLaunchMode(value, dshRoot) {
+  const mode = value || (dshRoot ? "source" : "npm");
+  if (mode !== "source" && mode !== "npm") throw new Error(`Invalid dshLaunchMode: ${mode}`);
+  return mode;
+}
+function optionalAbsolutePath(value) {
+  if (value === void 0 || value === null || value === "") return void 0;
+  if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("dshRoot must be an absolute path");
+  return path.resolve(value);
+}
+function optionalPackageSpec(value) {
+  if (typeof value !== "string" || !value.trim() || /\s/u.test(value)) throw new Error("dshPackage must be a package spec without whitespace");
+  return value.trim();
 }
 function pipePath(config3) {
   const hash = createHash("sha256").update(config3.stateDir).digest("hex").slice(0, 20);
@@ -7364,13 +7385,19 @@ function atomicJson(file2, value) {
   fs.renameSync(tmp, file2);
 }
 function doctor(config3) {
-  const bin = path.join(config3.dshRoot, "apps/cli/lib/bin.js");
+  const launchMode = normalizeLaunchMode(config3.dshLaunchMode, config3.dshRoot);
+  const dshRoot = launchMode === "npm" ? void 0 : optionalAbsolutePath(config3.dshRoot);
+  const dshPackage = optionalPackageSpec(config3.dshPackage || defaultDshPackage);
   const settingsPath = path.join(config3.dshHome, "settings.yaml");
   const settings = import_yaml.default.parse(fs.readFileSync(settingsPath, "utf8"));
   const official = config3.provider === "deepseek-official";
   const route = official ? settings?.["llm-deepseek"] || {} : settings?.["llm-pi-ai"]?.providers?.[config3.provider];
   const model = route?.models?.find((m) => m.id === config3.model);
-  if (!fs.existsSync(bin)) throw new Error(`DSH built CLI missing: ${bin}. Build the configured DSH checkout first.`);
+  if (launchMode === "source") {
+    if (!dshRoot) throw new Error("Source DSH launch mode requires an absolute dshRoot");
+    const bin = path.join(dshRoot, "apps/cli/lib/bin.js");
+    if (!fs.existsSync(bin)) throw new Error(`DSH built CLI missing: ${bin}. Build the configured DSH checkout first.`);
+  }
   if (!model && !(official && route.models === void 0)) throw new Error(`DSH settings do not contain ${config3.provider}/${config3.model}`);
   return {
     ok: true,
@@ -7378,10 +7405,13 @@ function doctor(config3) {
     provider: config3.provider,
     model: config3.model,
     reasoningEffort: config3.reasoningEffort,
-    dshRoot: config3.dshRoot,
+    dshLaunchMode: launchMode,
+    dshRoot: dshRoot || null,
+    dshPackage: launchMode === "npm" ? dshPackage : null,
     dshHome: config3.dshHome,
     stateDir: config3.stateDir,
     credentialReference: route.apiKeyEnv || (official ? "DEEPSEEK_API_KEY" : null),
+    launchCheck: launchMode === "npm" ? `npx resolves ${dshPackage} when the ACP session starts.` : "Built DSH CLI found in the configured source checkout.",
     modelCatalogCheck: model ? "Configured catalog entry found; ACP confirms actual route before each turn." : "Built-in DSH catalog; ACP confirms actual route before each turn.",
     credentialCheck: "Credentials are resolved by DSH at request time; doctor makes no model request.",
     dshPermissionPreset: settings?.permission?.defaultPreset || "workspace-write"
@@ -7396,7 +7426,14 @@ function agentCommand(config3) {
     { id: "system-prompt", config: { personaSuffix: `Your working directory is {{cwd}}. The verified Node.js executable on this host is ${JSON.stringify(process.execPath)}. If node is absent from the shell PATH, use that absolute executable (PowerShell: & followed by the quoted path). Do not install Node to work around a PATH issue.` } },
     { id: "session-telemetry-otel", disabled: true }
   ]));
-  return [process.execPath, path.join(config3.dshRoot, "apps/cli/lib/bin.js"), "--profile", "acp", "--patch", patchPath];
+  const mode = normalizeLaunchMode(config3.dshLaunchMode, config3.dshRoot);
+  if (mode === "npm") {
+    const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+    return [npx, "--yes", optionalPackageSpec(config3.dshPackage || defaultDshPackage), "--profile", "acp", "--patch", patchPath];
+  }
+  const root = optionalAbsolutePath(config3.dshRoot);
+  const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  return [pnpm, "--dir", root, "dsh", "--profile", "acp", "--patch", patchPath];
 }
 
 // src/ipc.mjs
@@ -30311,7 +30348,10 @@ var DshBackend = class {
   constructor(config3, onPermission) {
     this.config = config3;
     this.runtime = createAcpRuntime({
-      cwd: config3.dshRoot,
+      // Session cwd is supplied by TaskManager for every task. The runtime
+      // fallback only needs a valid directory when an external caller omits it;
+      // npm mode has no source checkout, so use the plugin process directory.
+      cwd: config3.dshRoot || process.cwd(),
       agentProcessEnv: { DSH_HOME: config3.dshHome },
       sessionStore: createFileSessionStore({ stateDir: path5.join(config3.stateDir, "acpx") }),
       agentRegistry: createAgentRegistry({ overrides: { dsh: agentCommand(config3) } }),

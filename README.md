@@ -61,7 +61,9 @@ codex plugin add dsh-commander@dsh-commander-marketplace
 ## 使用前准备
 
 1. 安装 [Node.js](https://nodejs.org/) 22.19 或更高版本。
-2. 准备一个已构建并支持 ACP 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 目录。该目录必须包含 `apps/cli/lib/bin.js`。
+2. 选择一种 DSH 启动方式并完成对应准备：
+   - **npm**：无需源码 checkout，首次启动时由 `npx` 解析 `@deepseek-ai/dsh` 包。
+   - **source**：安装 pnpm，准备一个已构建并支持 ACP 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) checkout；先在仓库根目录运行 `pnpm install`、`pnpm run build`，该目录必须包含 `apps/cli/lib/bin.js`。
 3. 在 DSH 中启用 DeepSeek 标准供应商，并准备它所需的凭据。默认路由为 `deepseek-official / deepseek-flash`，凭据引用为 `DEEPSEEK_API_KEY`。
 4. 在 Codex 中打开要处理的项目，并确认插件已安装且启用。
 
@@ -69,11 +71,12 @@ codex plugin add dsh-commander@dsh-commander-marketplace
 
 ## 配置
 
-首次使用前创建用户配置文件 `~/.dsh-commander/config.json`（Windows 下对应 `%USERPROFILE%\.dsh-commander\config.json`），把 `dshRoot` 改成自己的 DSH 根目录：
+首次使用前创建用户配置文件 `~/.dsh-commander/config.json`（Windows 下对应 `%USERPROFILE%\.dsh-commander\config.json`）。公共配置项如下：
 
 ```json
 {
-  "dshRoot": "C:/path/to/deepseek-harness",
+  "dshLaunchMode": "npm",
+  "dshPackage": "@deepseek-ai/dsh@latest",
   "provider": "deepseek-official",
   "model": "deepseek-flash",
   "reasoningEffort": "high",
@@ -83,11 +86,26 @@ codex plugin add dsh-commander@dsh-commander-marketplace
 }
 ```
 
-路径必须是绝对路径；上面的路径只是格式示例。配置项说明：
+使用源码启动时改为：
+
+```json
+{
+  "dshLaunchMode": "source",
+  "dshRoot": "C:/path/to/deepseek-harness",
+  "provider": "deepseek-official",
+  "model": "deepseek-flash"
+}
+```
+
+`dshLaunchMode` 只能是 `npm` 或 `source`。npm 模式使用与 `npx @deepseek-ai/dsh web` 相同的 npm CLI，默认包规格为 `@deepseek-ai/dsh@latest`；插件会把 profile 设为 `acp`，以便通过 stdio 与 Codex 通信。源码模式使用与在 DSH 根目录执行 `pnpm dsh web` 相同的源码 CLI，插件实际调用 `pnpm --dir <dshRoot> dsh --profile acp`。两种模式都不会启动 Web UI 端口。
+
+打包模板默认使用 npm 模式，因此普通安装不需要填写 DSH 根目录；需要从 checkout 运行时，把 `dshLaunchMode` 改为 `source` 并填写 `dshRoot`。npm 模式会忽略 `dshRoot`。
 
 | 配置项 | 说明 |
 | --- | --- |
-| `dshRoot` | DSH 根目录，必须能找到 `apps/cli/lib/bin.js`。 |
+| `dshLaunchMode` | DSH 启动方式：`npm` 或 `source`。 |
+| `dshPackage` | npm 模式的包规格，默认 `@deepseek-ai/dsh@latest`，可改为固定版本或 `next` 标签。 |
+| `dshRoot` | source 模式的 DSH 根目录，必须是绝对路径并能找到 `apps/cli/lib/bin.js`。npm 模式不需要。 |
 | `provider` / `model` | DSH ACP 使用的路由，默认 `deepseek-official` / `deepseek-flash`。 |
 | `reasoningEffort` | 传给 DSH 的推理强度。 |
 | `maxConcurrent` | 不同工作目录最多同时运行的任务数，范围 1–16。 |
@@ -103,7 +121,7 @@ codex plugin add dsh-commander@dsh-commander-marketplace
 | `DSH_HOME` | 指定 DSH 的状态和凭据目录。 |
 | `DSH_COMMANDER_WORKDIR` | 没有 MCP roots 时指定兼容工作目录。 |
 
-改完配置后重新打开 Codex 任务，或重启插件控制服务。`dsh_doctor` 可以在不发送模型请求的情况下检查 DSH 路径、路由和凭据引用。
+改完配置后重新打开 Codex 任务，或重启插件控制服务。`dsh_doctor` 可以在不发送模型请求的情况下检查启动方式、DSH 路径（source 模式）、路由和凭据引用。
 
 ## 开始一个任务
 
@@ -156,10 +174,11 @@ Codex 支持 MCP roots 时，插件自动读取当前会话的项目根目录，
 ## 故障排查
 
 1. 先调用 `dsh_doctor`。
-2. 若提示找不到 `apps/cli/lib/bin.js`，检查 `dshRoot` 是否指向 DSH 根目录，而不是它的父目录或 `apps/cli` 子目录。
-3. 若提示供应商或模型不可用，检查 DSH 标准供应商配置、`deepseek-flash` 模型目录和 `DEEPSEEK_API_KEY` 的凭据来源。
-4. 若提示无法确定工作目录，在主 Codex 项目会话中重试；独立 MCP 客户端请设置 `DSH_COMMANDER_WORKDIR`。
-5. 任务已经被标记为 `interrupted` 时，先检查工作区和 `dsh_get_task` 的结果，再明确要求 `dsh_continue_task`，不要盲目重复提交写入任务。
+2. source 模式若提示找不到 `apps/cli/lib/bin.js`，检查 `dshRoot` 是否指向已构建的 DSH 根目录，而不是它的父目录或 `apps/cli` 子目录。
+3. npm 模式若 `npx` 无法解析包，检查 Node.js、npm 网络或缓存，并确认 `dshPackage` 的包名和版本标签正确；如果机器上存在旧的全局 DSH，保留 `@latest` 或填写明确版本可避免误用旧包。
+4. 若提示供应商或模型不可用，检查 DSH 标准供应商配置、`deepseek-flash` 模型目录和 `DEEPSEEK_API_KEY` 的凭据来源。
+5. 若提示无法确定工作目录，在主 Codex 项目会话中重试；独立 MCP 客户端请设置 `DSH_COMMANDER_WORKDIR`。
+6. 任务已经被标记为 `interrupted` 时，先检查工作区和 `dsh_get_task` 的结果，再明确要求 `dsh_continue_task`，不要盲目重复提交写入任务。
 
 ## 开发者验证
 

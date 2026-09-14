@@ -1,6 +1,6 @@
 {
   "name": "dsh-commander",
-  "version": "0.1.0+codex.20260914102341",
+  "version": "0.1.0+codex.20260914105925",
   "description": "\u8ba9 Codex \u6307\u6325\u4f7f\u7528 DeepSeek \u6807\u51c6\u4f9b\u5e94\u5546 V4.1 Flash \u7684\u5b8c\u6574 DSH \u4f1a\u8bdd\uff1a\u540e\u53f0\u4efb\u52a1\u3001\u591a\u8f6e\u7eed\u63a5\u3001\u8fdb\u5ea6\u3001\u53d6\u6d88\u548c\u6062\u590d\u3002",
   "author": {
     "name": "DSH Commander contributors"

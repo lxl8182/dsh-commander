@@ -28713,6 +28713,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 var pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 var version2 = "0.1.0";
+var defaultDshPackage = "@deepseek-ai/dsh@latest";
 function loadConfig() {
   const stateDir = path.resolve(process.env.DSH_COMMANDER_HOME || path.join(os.homedir(), ".dsh-commander"));
   const configPath = process.env.DSH_COMMANDER_CONFIG || path.join(stateDir, "config.json");
@@ -28720,11 +28721,31 @@ function loadConfig() {
   const local = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf8")) : {};
   const config3 = { ...defaults, ...local, stateDir, configPath };
   config3.dshHome = path.resolve(config3.dshHome || process.env.DSH_HOME || path.join(os.homedir(), ".dsh"));
-  config3.dshRoot = path.resolve(config3.dshRoot);
+  config3.dshLaunchMode = normalizeLaunchMode(config3.dshLaunchMode, config3.dshRoot);
+  config3.dshRoot = optionalAbsolutePath(config3.dshRoot);
+  if (config3.dshLaunchMode === "npm") config3.dshRoot = void 0;
+  config3.dshPackage = optionalPackageSpec(config3.dshPackage || defaultDshPackage);
+  if (config3.dshLaunchMode === "source" && !config3.dshRoot) {
+    throw new Error("Source DSH launch mode requires an absolute dshRoot");
+  }
   for (const [key, min, max] of [["maxConcurrent", 1, 16], ["turnTimeoutMs", 1e3, 864e5], ["startupTimeoutMs", 1e3, 3e5]]) {
     if (!Number.isInteger(config3[key]) || config3[key] < min || config3[key] > max) throw new Error(`Invalid ${key}`);
   }
   return config3;
+}
+function normalizeLaunchMode(value, dshRoot) {
+  const mode = value || (dshRoot ? "source" : "npm");
+  if (mode !== "source" && mode !== "npm") throw new Error(`Invalid dshLaunchMode: ${mode}`);
+  return mode;
+}
+function optionalAbsolutePath(value) {
+  if (value === void 0 || value === null || value === "") return void 0;
+  if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("dshRoot must be an absolute path");
+  return path.resolve(value);
+}
+function optionalPackageSpec(value) {
+  if (typeof value !== "string" || !value.trim() || /\s/u.test(value)) throw new Error("dshPackage must be a package spec without whitespace");
+  return value.trim();
 }
 function pipePath(config3) {
   const hash = createHash("sha256").update(config3.stateDir).digest("hex").slice(0, 20);

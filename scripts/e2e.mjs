@@ -15,7 +15,9 @@ let client;let taskId;const evidence={runId,workspace,checks:[],startedAt:new Da
 async function connect(){const c=new Client({name:'dsh-commander-e2e',version:'0.1.0'});
   c.registerCapabilities({roots:{listChanged:true}});
   c.setRequestHandler(ListRootsRequestSchema,()=>({roots:[{uri:pathToFileURL(workspace).href,name:'e2e workspace'}]}));
-  await c.connect(new StdioClientTransport({command:process.execPath,args:[path.join(process.env.DSH_TEST_PLUGIN_ROOT||pluginRoot,'dist/server.mjs')],stderr:'pipe'}));return c;}
+  const env={};
+  for(const name of ['DSH_COMMANDER_HOME','DSH_COMMANDER_CONFIG','DSH_HOME','DSH_COMMANDER_WORKDIR'])if(process.env[name])env[name]=process.env[name];
+  await c.connect(new StdioClientTransport({command:process.execPath,args:[path.join(process.env.DSH_TEST_PLUGIN_ROOT||pluginRoot,'dist/server.mjs')],stderr:'pipe',env}));return c;}
 async function call(name,args={}){const r=await client.callTool({name,arguments:args},undefined,{timeout:160000});if(r.isError)throw new Error(r.content[0].text);return JSON.parse(r.content[0].text);}
 async function finish(id){let cursor=0;const until=Date.now()+300000;
   while(Date.now()<until){const r=await call('dsh_get_task',{taskId:id,cursor,waitMs:10000});cursor=r.cursor;

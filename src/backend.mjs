@@ -7,7 +7,10 @@ export class DshBackend {
   constructor(config,onPermission) {
     this.config=config;
     this.runtime=createAcpRuntime({
-      cwd:config.dshRoot,
+      // Session cwd is supplied by TaskManager for every task. The runtime
+      // fallback only needs a valid directory when an external caller omits it;
+      // npm mode has no source checkout, so use the plugin process directory.
+      cwd:config.dshRoot || process.cwd(),
       agentProcessEnv:{ DSH_HOME:config.dshHome },
       sessionStore:createFileSessionStore({stateDir:path.join(config.stateDir,'acpx')}),
       agentRegistry:createAgentRegistry({overrides:{dsh:agentCommand(config)}}),

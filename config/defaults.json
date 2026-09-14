@@ -1,5 +1,6 @@
 {
-  "dshRoot": "E:/dsh/deepseek-harness",
+  "dshLaunchMode": "npm",
+  "dshPackage": "@deepseek-ai/dsh@latest",
   "provider": "deepseek-official",
   "model": "deepseek-flash",
   "reasoningEffort": "high",
