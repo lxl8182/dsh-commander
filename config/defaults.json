@@ -1,0 +1,9 @@
+{
+  "dshRoot": "E:/dsh/deepseek-harness",
+  "provider": "deepseek-official",
+  "model": "deepseek-flash",
+  "reasoningEffort": "high",
+  "maxConcurrent": 3,
+  "turnTimeoutMs": 1800000,
+  "startupTimeoutMs": 90000
+}

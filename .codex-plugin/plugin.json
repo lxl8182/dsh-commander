@@ -1,0 +1,23 @@
+{
+  "name": "dsh-commander",
+  "version": "0.1.0+codex.20260914100802",
+  "description": "\u8ba9 Codex \u6307\u6325\u4f7f\u7528 DeepSeek \u6807\u51c6\u4f9b\u5e94\u5546 V4.1 Flash \u7684\u5b8c\u6574 DSH \u4f1a\u8bdd\uff1a\u540e\u53f0\u4efb\u52a1\u3001\u591a\u8f6e\u7eed\u63a5\u3001\u8fdb\u5ea6\u3001\u53d6\u6d88\u548c\u6062\u590d\u3002",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "DSH Commander",
+    "shortDescription": "\u7528 GPT-6 \u6307\u6325 DeepSeek \u6807\u51c6\u4f9b\u5e94\u5546 V4.1 Flash \u5b8c\u6210\u5f00\u53d1\u4efb\u52a1",
+    "longDescription": "\u901a\u8fc7 ACP \u9a71\u52a8\u5b8c\u6574 DeepSeek Harness\u3002\u652f\u6301\u6301\u4e45\u4f1a\u8bdd\u3001\u540e\u53f0\u8fd0\u884c\u3001\u6392\u961f\u8fd4\u5de5\u3001\u8fdb\u5ea6\u67e5\u8be2\u3001\u53d6\u6d88\u4e0e\u6062\u590d\uff0c\u590d\u7528\u672c\u5730 DSH \u7684\u4f9b\u5e94\u5546\u51ed\u636e\u3002",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [
+      "Write"
+    ],
+    "defaultPrompt": [
+      "\u4f7f\u7528 DSH Commander\uff0c\u8ba9 DeepSeek \u6807\u51c6\u4f9b\u5e94\u5546\u7684 V4.1 Flash \u6267\u884c\u4efb\u52a1\uff0c\u7531\u4f60\u8d1f\u8d23\u68c0\u67e5\u4e0e\u9a8c\u6536\u3002"
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}
