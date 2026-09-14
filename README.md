@@ -3,7 +3,7 @@
 让 Codex 主会话（例如 GPT-6）指挥一个完整的 DeepSeek Harness（DSH）子代理。DSH 保留自己的上下文、工具、执行循环和持久会话；Codex 负责拆解任务、查看结果、继续返工和最终验收。
 
 ```text
-Codex 主会话 → DSH Commander MCP → ACP → DeepSeek Harness → DeepSeek 标准供应商
+Codex 主会话 → DSH Commander MCP → DSH Web / ACP → DeepSeek 标准供应商
 ```
 
 插件会把 DSH 子代理放在当前 Codex 会话的工作目录中。子代理可以读写项目文件、执行命令并跨多轮继续工作，主会话可以随时查询进度或要求返工。
@@ -61,7 +61,8 @@ codex plugin add dsh-commander@dsh-commander-marketplace
 ## 使用前准备
 
 1. 安装 [Node.js](https://nodejs.org/) 22.19 或更高版本。
-2. 选择一种 DSH 启动方式并完成对应准备：
+2. 选择后端并完成对应准备：
+   - **Web（需要界面同步时推荐）**：启动现有 DSH Web 服务，配置下方的 `dshBackend` 和 `dshWebUrl`。Commander 在同一 Web 进程中创建工作区会话，界面直接接收实时输出。
    - **npm**：无需源码 checkout，首次启动时由 `npx` 解析 `@deepseek-ai/dsh` 包。
    - **source**：安装 pnpm，准备一个已构建并支持 ACP 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) checkout；先在仓库根目录运行 `pnpm install`、`pnpm run build`，该目录必须包含 `apps/cli/lib/bin.js`。
 3. 在 DSH 中启用 DeepSeek 标准供应商，并准备它所需的凭据。默认路由为 `deepseek-official / deepseek-flash`，凭据引用为 `DEEPSEEK_API_KEY`。
@@ -71,7 +72,29 @@ codex plugin add dsh-commander@dsh-commander-marketplace
 
 ## 配置
 
-首次使用前创建用户配置文件 `~/.dsh-commander/config.json`（Windows 下对应 `%USERPROFILE%\.dsh-commander\config.json`）。公共配置项如下：
+### 在 DSH 界面中按工作区显示并实时输出
+
+在 `~/.dsh-commander/config.json` 中配置运行中的本机 Web 服务：
+
+```json
+{
+  "dshBackend": "web",
+  "dshWebUrl": "http://127.0.0.1:3080",
+  "provider": "deepseek-official",
+  "model": "deepseek-flash",
+  "reasoningEffort": "high"
+}
+```
+
+端口以实际 DSH Web 服务为准。`dshHome` 可选，默认 `~/.dsh`，必须与 Web 服务使用的 DSH home 一致。仅接受本机回环 HTTP(S) 地址；本地 owner 会话凭据用于认证，不写入插件配置或日志。Web 服务须先启动，Commander 不负责启动或关闭它。显式选择 Web 后连接失败会报告错误，不会自动切回 ACP。
+
+新任务通过 `workspace/create` 注册当前目录，再由 `session/create(workspaceId)` 建立会话。续接保留原会话 ID，并恢复工作区归属。Web UI 接收逐字流式输出；给 Codex 的回报仍使用精简状态和按版本返回的交付报告。`close` 仅释放 Commander 的订阅，保留会话历史。
+
+取消优先移除属于该请求的排队消息，已开始的请求等待自己的 `turn/end`。连接中断或取消超时会明确报告；确认状态前不要重派可能已经执行的写操作。Web 使用现有的 DSH 权限配置，额外审批转发给 Commander，取消审批会同步撤销父会话中的等待。
+
+### 使用独立 ACP 后端
+
+未配置 Web 时使用 ACP。用户配置文件为 `~/.dsh-commander/config.json`（Windows 下对应 `%USERPROFILE%\.dsh-commander\config.json`）。公共配置项如下：
 
 ```json
 {
@@ -136,15 +159,17 @@ codex plugin add dsh-commander@dsh-commander-marketplace
 - “取消这个 DSH 任务。”
 - “关闭已经完成的 DSH 会话。”
 
-Codex 支持 MCP roots 时，插件自动读取当前会话的项目根目录，并将同一个目录传给 DSH 子代理。通常不需要填写 `cwd`；插件也会拒绝把任务提交到主会话根目录之外的路径。独立 MCP 客户端没有 roots 时，才使用 `DSH_COMMANDER_WORKDIR` 或工具参数中的绝对路径。
+首次派发时，Codex 把当前任务环境中已确认的绝对工作目录作为 `cwd` 传入，不需要用户手填。部分 Codex 客户端未提供 MCP roots，显式路径可避免首次调用失败。有 roots 时，插件校验 `cwd` 属于其中一个根并选中该根；省略 `cwd` 时使用首个根。没有可用 roots 时，显式路径优先于 `DSH_COMMANDER_WORKDIR` 等环境变量和启动目录；无效的显式路径会报错，不静默切换项目，也不把插件安装目录当作默认工作区。
+
+DSH 自行加载自己的 agent 指令与环境配置。任务卡只传目标、必要事实、修改范围、用户授权与验收，不重复注入 Codex 的 RTK、Shell 或网络代理习惯。
 
 ## 提供的工具
 
 | 工具 | 用途 |
 | --- | --- |
-| `dsh_doctor` | 检查 DSH 路径、路由和控制服务，不调用模型。 |
-| `dsh_start_task` | 创建持久 DSH 任务并立即返回 `taskId`。 |
-| `dsh_get_task` | 读取增量进度、结果和待处理的权限请求。 |
+| `dsh_doctor` | 检查 DSH 路径、路由和控制服务，不调用模型；并报告控制服务跳过了多少个不可读的任务快照。 |
+| `dsh_start_task` | 创建持久 DSH 任务并立即返回 `taskId` 与精简状态。 |
+| `dsh_get_task` | 等待可行动状态并读取结构化报告、待处理权限。 |
 | `dsh_continue_task` | 在同一 DSH 会话中继续一轮指挥；忙时顺序排队。 |
 | `dsh_list_tasks` | 列出当前或历史任务，用于找回 `taskId`。 |
 | `dsh_cancel_task` | 取消当前轮和排队指令。 |
@@ -153,9 +178,34 @@ Codex 支持 MCP roots 时，插件自动读取当前会话的项目根目录，
 
 每次请求都带有独立 `requestId`。网络或工具超时后重试同一操作时复用原 ID，可避免重复提交文件写入；更改参数后必须使用新的 ID。
 
+### 读取结果的约定
+
+`dsh_get_task` 默认 `waitFor: "actionable"`：只有当前轮结束（成功、失败、取消、中断）、出现待处理权限或 `waitMs` 超时时才返回。普通文字与工具进度仍会写入事件日志，但不会唤醒主代理。需要逐条观察进度时显式使用 `waitFor: "change"`。
+
+返回内容默认 `view: "compact"`：只包含状态、结构化报告和 artifact 路径，不回传运行中的累计正文、完整事件或全部历史轮次。需要诊断时使用 `view: "events"`，它按 `cursor` 顺序返回一页事件（`limit` 默认 50），并给出下一页使用的 `cursor`、`latestCursor`、`hasMore`、`eventsTruncated` 和 `eventsDroppedBefore`；超出内存保留窗口的事件仍完整保存在 `tasks/<id>.events.jsonl`。
+
+每一轮结束都会得到 `resultVersion`（标识实际结束的那一轮）。把它转换为字符串 `String(resultVersion)` 作为 `afterResultVersion` 传回下一次调用时，相同版本的结果不会重复回传；其他客户端不传该参数，仍能首次取到结果——去重由调用方驱动，不使用全局已读标志。后续排队轮次不会掩盖已结束轮次的结果。
+
+结果文本优先来自结构化报告；若报告缺失或畸形，则返回带 `resultFallback: true` 和 `resultFallbackReason` 的有限尾部摘要，完整原始输出始终保留在 `tasks/<id>.<turn>.result.txt`。
+
+### 结构化报告
+
+插件在真正发给 DSH 的每一轮前注入一段短执行约定，要求 DSH 在最终输出末尾给出：
+
+```text
+<<<DSH_REPORT>>>
+{"outcome":"done|blocked|decision_required","summary":"...","changedFiles":["..."],"checks":[{"command":"...","status":"pass|fail|not_run","evidence":"..."}],"unresolved":["..."],"decision":{"question":"...","options":["..."],"recommendation":"..."}}
+<<<END_DSH_REPORT>>>
+```
+
+只有完整、字段类型正确的单个报告块才会被接受；畸形、截断、重复或缺失都会走 fallback，不会被当作成功。`outcome: done` 表示 DS 自报交付物已完成，但不表示主代理验收通过，主代理仍需核对实际改动。提示词和报告都是任务数据，不会授予新的权限。
+
+`scripts/overhead-eval.mjs` 用合成流量对比新旧回包的字符数与唤醒次数，结果写入 `docs/overhead-eval.json`。该指标只证明协议开销下降，不等于真实订阅额度节省。
+
 ## 任务和权限行为
 
-- 任务状态依次可能为 `queued`、`starting`、`running`、`waiting_permission`、`completed`、`failed`、`cancelled` 或 `interrupted`。
+- 任务状态依次可能为 `queued`、`starting`、`running`、`waiting_permission`、`completed`、`failed`、`cancelled` 或 `interrupted`。状态表示的是任务当前所处的阶段；某一轮的结果请以 `resultVersion` 和返回的报告为准。
+- 权限属于控制状态，不会被精简回包或事件分页掩盖：`waiting_permission` 会立即结束 actionable 等待，并随快照返回完整权限请求。
 - MCP 连接关闭后，后台控制服务仍会持有 DSH 进程；控制服务重启后，未完成任务会标为 `interrupted`，不会自动重放写入操作。
 - 同一个物理工作目录中的任务会串行执行；不同目录可按 `maxConcurrent` 并行。
 - 取消、失败或关闭不会回滚已经写入的文件。并行开发请先由主代理创建独立 Git worktree。
@@ -187,15 +237,19 @@ Codex 支持 MCP roots 时，插件自动读取当前会话的项目根目录，
 ```powershell
 npm ci --ignore-scripts
 npm test
+node scripts/overhead-eval.mjs
 npm run build
 npm run doctor
+npm run verify
 python scripts/package.py
 ```
 
-`npm test` 使用模拟后端，不调用模型。需要端到端验证时再运行 `node scripts/e2e.mjs`；它会使用配置的 DSH 路由并消耗模型额度。发布前请确认 ZIP 不含 `node_modules`、凭据或任务数据，并通过 Codex 插件校验器。
+`npm test` 使用模拟后端，不调用模型，覆盖 actionable 等待、结果版本去重、事件分页、报告解析、快照恢复和既有生命周期行为。`node scripts/overhead-eval.mjs` 只生成合成协议开销证据，不消耗模型额度。`npm run verify` 校验已构建的 `dist/`：它用临时状态目录启动打包后的服务与控制服务，断言工具 schema 并读取 `doctor`，全程不调用模型，也不会读取或影响正在运行的控制服务——它只关停自己在临时目录里启动的那个进程。需要端到端验证时再运行 `node scripts/e2e.mjs`；它会使用配置的 DSH 路由并消耗模型额度，`node scripts/installed-smoke.mjs` 则对安装副本做同样的真实调用验收。发布前请确认 ZIP 不含 `node_modules`、凭据或任务数据，并通过 Codex 插件校验器。
 
 ## 许可证和致谢
 
 项目代码采用 [MIT License](LICENSE)。运行时使用 [openclaw/acpx](https://github.com/openclaw/acpx)（0.15.1）和官方 MCP SDK；依赖许可证见 `dist/THIRD_PARTY_LICENSES.txt`。
 
 Codex 插件的 marketplace 格式和 GitHub 导入流程参见 [OpenAI 插件管理文档](https://learn.chatgpt.com/docs/enterprise/plugin-management)；插件安装与工作区权限受 Codex 账户和工作区策略控制。
+
+报告 JSON 硬上限为 12000 字符；超限明确回退。有效报告不附带前面的进度正文，fallback 尾部最多 2000 字符，完整输出和报告产物路径保持可读。旧版任务快照在恢复时补齐轮次与结果版本，未完成执行轮的已有输出以 interrupted 证据保留。

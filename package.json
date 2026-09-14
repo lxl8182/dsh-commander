@@ -5,8 +5,24 @@
   "type": "module",
   "description": "Codex orchestration of persistent DeepSeek Harness agents over ACP",
   "license": "MIT",
-  "engines": { "node": ">=22.19.0" },
-  "scripts": { "start": "node dist/server.mjs", "build": "node scripts/build.mjs", "test": "node --test test/*.test.mjs", "doctor": "node scripts/doctor.mjs" },
-  "dependencies": { "acpx": "0.15.1", "@modelcontextprotocol/sdk": "1.29.0", "yaml": "2.8.2", "zod": "3.25.76" },
-  "devDependencies": { "esbuild": "0.25.12" }
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "start": "node dist/server.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "verify": "node scripts/verify-dist.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "acpx": "0.15.1",
+    "ws": "8.21.3",
+    "yaml": "2.8.2",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
 }

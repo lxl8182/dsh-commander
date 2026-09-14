@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-09-14T15:26:21.742Z",
+  "disclaimer": "Synthetic protocol comparison. UTF-8 byte counts and observed manager returns, not real subscription-quota savings. Legacy snapshot models an initial cursor=0 read; change signals are wake opportunities, not measured parent model turns.",
+  "scenario": {
+    "progressEvents": 300,
+    "rawResultCharacters": 50754
+  },
+  "contractPreambleCharacters": 975,
+  "wire": {
+    "legacyCompactResponseBytes": 33196,
+    "newCompactResponseBytes": 3235,
+    "newOmittedResponseBytes": 1700,
+    "finalTextReturnedCharacters": 0,
+    "rawResultCharacters": 50754
+  },
+  "wakeups": {
+    "measuredActionableReturns": 1,
+    "observedChangeSignals": 305,
+    "actionableSignalWakesDuringTurn": 1,
+    "note": "Change signals are measured potential wake sources. They are not actual legacy MCP polling calls or Astra turns. measuredActionableReturns counts the real new wait invocation in this synthetic backend."
+  },
+  "comparison": {
+    "legacyVsNewBytesRatio": 10.26,
+    "newOmittedVsLegacyRatio": 0.0512
+  }
+}

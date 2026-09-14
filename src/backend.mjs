@@ -1,6 +1,12 @@
 import path from 'node:path';
 import { createAcpRuntime, createAgentRegistry, createFileSessionStore } from 'acpx/runtime';
 import { agentCommand } from './config.mjs';
+import { DshWebBackend } from './web-backend.mjs';
+
+/** Explicit Web routing never falls back to an invisible ACP process. */
+export function createBackend(config,onPermission){
+  return config.dshBackend==='web'?new DshWebBackend(config,onPermission):new DshBackend(config,onPermission);
+}
 
 /** ACPX owns the complete external Harness process and the durable ACP session. */
 export class DshBackend {

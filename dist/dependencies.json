@@ -45,6 +45,11 @@
     "license": "ISC"
   },
   {
+    "name": "ws",
+    "version": "8.21.3",
+    "license": "MIT"
+  },
+  {
     "name": "@agentclientprotocol/sdk",
     "version": "1.4.0",
     "license": "Apache-2.0"

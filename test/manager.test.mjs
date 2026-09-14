@@ -72,6 +72,25 @@ test('restart marks unfinished work interrupted and does not dispatch it',async 
   const restored=new TaskManager(f.config,()=>f.backend);assert.equal(restored.get(a.taskId).status,'interrupted');assert.equal(restored.active.size,0);
   await f.manager.cancel(a.taskId);
 });
+test('one unreadable task snapshot is skipped instead of stopping the controller',async t=>{
+  const f=fixture(t);const a=f.manager.start(f.input());await until(()=>f.started.length===1);
+  f.started[0].complete();await until(()=>f.manager.get(a.taskId).status==='completed');
+  const tasksDir=path.join(f.config.stateDir,'tasks');
+  const uuid=n=>`00000000-0000-4000-8000-00000000000${n}`;
+  fs.writeFileSync(path.join(tasksDir,uuid(1)+'.json'),'{"id":"00000000-0000-4000-8000-000000000001"');
+  fs.writeFileSync(path.join(tasksDir,uuid(2)+'.json'),JSON.stringify({id:'not-a-task-id',turns:[]}));
+  fs.writeFileSync(path.join(tasksDir,uuid(3)+'.json'),JSON.stringify({id:uuid(3)}));
+  // Turn artifacts live in the same directory and must never be read as snapshots.
+  const artifactName=`${a.taskId}.11111111-2222-4333-8444-555555555555.report.json`;
+  fs.writeFileSync(path.join(tasksDir,artifactName),JSON.stringify({outcome:'done',summary:'结论',changedFiles:[],checks:[],unresolved:[],decision:null}));
+  let restored;
+  assert.doesNotThrow(()=>{restored=new TaskManager(f.config,()=>f.backend);});
+  assert.deepEqual(restored.skippedTaskFiles.map(s=>path.basename(s.file)).sort(),[uuid(1)+'.json',uuid(2)+'.json',uuid(3)+'.json']);
+  assert.equal(restored.tasks.size,1,'the readable task is still restored');
+  assert.equal(restored.get(a.taskId).status,'completed');
+  assert.ok(!restored.skippedTaskFiles.some(s=>s.file.endsWith('.report.json')),'artifacts are ignored by name, not reported as damage');
+  await f.manager.cancel(a.taskId);
+});
 test('incremental poll wakes on task completion',async t=>{
   const f=fixture(t);const a=f.manager.start(f.input());await until(()=>f.started.length===1);
   const task=f.manager.get(a.taskId);const pending=f.manager.wait(a.taskId,task.cursor,1000);f.started[0].complete();const result=await pending;
