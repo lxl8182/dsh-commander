@@ -1,44 +1,79 @@
 # DSH Commander
 
-让 Codex 主会话（例如订阅 GPT-6）指挥完整 DeepSeek Harness，默认使用你本地已配置的 **DeepSeek 标准供应商 / deepseek-flash**。
+让 Codex 主会话（例如 GPT-6）指挥一个完整的 DeepSeek Harness（DSH）子代理。DSH 保留自己的上下文、工具、执行循环和持久会话；Codex 负责拆解任务、查看结果、继续返工和最终验收。
 
 ```text
-Codex GPT-6 → 插件 MCP 工具 → 本地后台控制服务 → acpx/runtime → DSH ACP → DeepSeek 标准供应商
+Codex 主会话 → DSH Commander MCP → ACP → DeepSeek Harness → DeepSeek 标准供应商
 ```
 
-DSH 自己管理上下文、模型调用、文件和 PowerShell 工具、执行循环与压缩。插件管理任务、续接、排队、进度和生命周期。GPT-6 的订阅登录留在 Codex，DSH 继续使用自己的供应商凭据。
+插件会把 DSH 子代理放在当前 Codex 会话的工作目录中。子代理可以读写项目文件、执行命令并跨多轮继续工作，主会话可以随时查询进度或要求返工。
 
-## 使用
+仓库：[github.com/lxl8182/dsh-commander](https://github.com/lxl8182/dsh-commander) · [发行版](https://github.com/lxl8182/dsh-commander/releases)
 
-安装后，新建一个 Codex 会话，选择 GPT-6，输入：
+## 安装
 
-> 使用 DSH Commander，让 DeepSeek 标准供应商的 V4.1 Flash 在当前项目完成以下任务：……。由你检查结果，必要时让它在原会话返工，最后验收。
+DSH Commander 是包含 MCP 服务和技能的 Codex 插件。它声明了本地进程，因此需要 Codex CLI 或 Codex 桌面端的本地执行能力；仅能运行远程网页会话的环境无法启动 DSH 进程。
 
-也可以说“查看 DSH 任务进度”“继续上一个 DSH 任务”“取消这个 DSH 任务”。插件技能会选择对应工具。任务默认使用主 Codex 会话当前工作目录，Codex MCP roots 会自动传给插件；因此不需要另行指定目录。任务会修改这个目录，应明确任务范围。
+### 从 GitHub marketplace 安装（推荐）
 
-插件会拒绝把新任务提交到与主 Codex 根目录不同的目录。只有独立 MCP 客户端没有 roots 时，才使用显式绝对路径或 `DSH_COMMANDER_WORKDIR` 作为兼容回退。
-
-## 安装与环境
-
-本机通过个人插件市场安装：
+仓库已经包含 `.agents/plugins/marketplace.json`。有仓库读取权限的用户可以把它作为 Codex marketplace 添加，然后安装插件：
 
 ```powershell
-codex plugin add dsh-commander@personal
+codex plugin marketplace add lxl8182/dsh-commander
+codex plugin add dsh-commander@dsh-commander-marketplace
 ```
 
-MCP 服务和控制服务已打包在 `dist/`，运行不需要 `npm install`。需要本机 Node.js 22.19+，以及已构建、能运行 ACP 的 DSH。本机默认 DSH 路径为 `E:/dsh/deepseek-harness`。插件在启动时调用公开 CLI `apps/cli/lib/bin.js --profile acp --patch ...`，使用默认 base + ACP 组合，不加载 Web UI 插件或 Web 专属 persona。
+检查安装状态：
 
-安装 ZIP 到另一台机器时，将插件根目录放入个人市场对应的 `~/plugins/dsh-commander`，使用 Codex 的 plugin-creator 将该目录登记到个人市场，再安装。ZIP 不包含 DSH 本体或任何凭据。
+```powershell
+codex plugin list
+```
 
-插件源码：`~/plugins/dsh-commander`。Codex 使用安装缓存副本，编辑源文件后需要构建并使用 plugin-creator 的 cachebuster/reinstall 流程更新。
+在支持工作区插件的 Codex 桌面端，也可以打开 **Workspace settings → Plugins → Add → Import marketplace**，将 `https://github.com/lxl8182/dsh-commander` 填入 **Source**，Path 留空；导入后安装 **DSH Commander**。私有仓库需要先授权可读取该仓库的 GitHub 账户。
 
-## 本地配置
+### 从发行 ZIP 安装
 
-按需创建 `~/.dsh-commander/config.json`，覆盖这些默认值：
+从[发行页面](https://github.com/lxl8182/dsh-commander/releases)下载 `dsh-commander.zip`，解压后把解压目录作为本地 marketplace：
+
+```powershell
+$pluginDir = "<解压目录>\dsh-commander"
+codex plugin marketplace add $pluginDir
+codex plugin add dsh-commander@dsh-commander-marketplace
+```
+
+ZIP 已包含 `dist/`、技能、配置模板和 marketplace 清单，不包含 DSH 本体、`node_modules` 或任何凭据。升级 GitHub marketplace 时运行：
+
+```powershell
+codex plugin marketplace upgrade dsh-commander-marketplace
+```
+
+### 从源码安装
+
+```powershell
+git clone https://github.com/lxl8182/dsh-commander.git
+Set-Location .\dsh-commander
+codex plugin marketplace add (Get-Location).Path
+codex plugin add dsh-commander@dsh-commander-marketplace
+```
+
+源码安装适合需要审阅或修改插件的用户；普通使用者直接使用 marketplace 或发行 ZIP 即可。
+
+## 使用前准备
+
+1. 安装 [Node.js](https://nodejs.org/) 22.19 或更高版本。
+2. 准备一个已构建并支持 ACP 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 目录。该目录必须包含 `apps/cli/lib/bin.js`。
+3. 在 DSH 中启用 DeepSeek 标准供应商，并准备它所需的凭据。默认路由为 `deepseek-official / deepseek-flash`，凭据引用为 `DEEPSEEK_API_KEY`。
+4. 在 Codex 中打开要处理的项目，并确认插件已安装且启用。
+
+插件不会把 DeepSeek 密钥写入配置、发送到 Codex，或要求用户在聊天中粘贴密钥；凭据由 DSH 在请求时读取。Codex 的订阅登录和 DeepSeek 的供应商凭据是两套独立配置。
+
+## 配置
+
+首次使用前创建用户配置文件 `~/.dsh-commander/config.json`（Windows 下对应 `%USERPROFILE%\.dsh-commander\config.json`），把 `dshRoot` 改成自己的 DSH 根目录：
 
 ```json
 {
-  "dshRoot": "E:/dsh/deepseek-harness",
+  "dshRoot": "C:/path/to/deepseek-harness",
   "provider": "deepseek-official",
   "model": "deepseek-flash",
   "reasoningEffort": "high",
@@ -48,66 +83,100 @@ MCP 服务和控制服务已打包在 `dist/`，运行不需要 `npm install`。
 }
 ```
 
-`dshHome` 默认沿用 `DSH_HOME` 或 `~/.dsh`。`DSH_COMMANDER_HOME` 可以更换插件状态目录；`DSH_COMMANDER_CONFIG` 可以指定配置文件。变更配置后重启控制服务，再开始任务。已有任务保留创建时的供应商、模型和推理强度。
+路径必须是绝对路径；上面的路径只是格式示例。配置项说明：
 
-DeepSeek 标准供应商的凭据引用为 `DEEPSEEK_API_KEY`，由 DSH 的凭据服务读取。插件不复制、打印或要求在聊天中提供密钥。全局 DSH 默认模型不被修改；每一轮通过 ACP 确认指定路由后才提交提示词。不会在失败时更换供应商或模型。
+| 配置项 | 说明 |
+| --- | --- |
+| `dshRoot` | DSH 根目录，必须能找到 `apps/cli/lib/bin.js`。 |
+| `provider` / `model` | DSH ACP 使用的路由，默认 `deepseek-official` / `deepseek-flash`。 |
+| `reasoningEffort` | 传给 DSH 的推理强度。 |
+| `maxConcurrent` | 不同工作目录最多同时运行的任务数，范围 1–16。 |
+| `turnTimeoutMs` | 单轮任务超时，默认 30 分钟。 |
+| `startupTimeoutMs` | 启动 DSH 进程的超时，默认 90 秒。 |
 
-## 工具
+可用环境变量：
 
-| 工具 | 功能 |
-|---|---|
-| `dsh_doctor` | 检查配置和控制服务，不发送模型请求 |
-| `dsh_start_task` | 新建持久任务并立即返回 ID |
-| `dsh_get_task` | 增量进度、结果、等待授权；最长等待 55 秒 |
-| `dsh_continue_task` | 同一会话多轮指挥；忙时顺序排队 |
-| `dsh_list_tasks` | 找回当前或历史任务 |
-| `dsh_cancel_task` | 取消当前轮与排队指令 |
-| `dsh_close_task` | 释放 Harness 进程，保留历史 |
-| `dsh_respond_permission` | 一次性回应 DSH 的授权请求 |
+| 环境变量 | 用途 |
+| --- | --- |
+| `DSH_COMMANDER_CONFIG` | 指定配置文件路径。 |
+| `DSH_COMMANDER_HOME` | 指定插件状态目录。 |
+| `DSH_HOME` | 指定 DSH 的状态和凭据目录。 |
+| `DSH_COMMANDER_WORKDIR` | 没有 MCP roots 时指定兼容工作目录。 |
 
-每次提交使用独立 `requestId`；网络或工具超时重试相同操作时复用 ID，参数不同会报错，防止重复写文件。
+改完配置后重新打开 Codex 任务，或重启插件控制服务。`dsh_doctor` 可以在不发送模型请求的情况下检查 DSH 路径、路由和凭据引用。
 
-## 状态与恢复
+## 开始一个任务
 
-`queued → starting → running → completed / failed / cancelled`。需要回应权限时为 `waiting_permission`；控制服务异常重启时，未完成任务变为 `interrupted`，不会自动重放。先检查文件和结果，再明确继续。
+在已启用插件的 Codex 会话中直接描述任务，例如：
 
-MCP 连接关闭后任务继续运行；后台控制服务独立持有 DSH 进程。关闭任务后仍能恢复同一原生 ACP 会话。DSH 的标准 `session/resume` 不回放旧 transcript，但模型会恢复持久上下文；插件保留自己的历史结果和进度。
+> 使用 DSH Commander，让 DeepSeek 标准供应商的 V4.1 Flash 在当前项目完成以下任务：实现登录接口、补充测试并运行验证。由你检查改动，必要时让它在原会话返工，最后验收。
 
-同一物理目录中的任务串行执行，不同目录最多同时执行 `maxConcurrent` 个。并行开发可由主代理先准备独立 Git worktree；插件不自动创建分支、提交或合并。任务完成后使用 `dsh_close_task` 释放空闲的 Harness 进程。
+也可以使用自然语言请求：
 
-关闭、取消、失败都不会回滚已经写入的文件。DSH 使用本地已有的权限设置；主代理须遵守用户授权与主会话权限，不通过外部 Harness 绕过限制。
+- “查看 DSH 任务进度。”
+- “让上一个 DSH 任务继续修复失败的测试。”
+- “取消这个 DSH 任务。”
+- “关闭已经完成的 DSH 会话。”
 
-## 输出与存储
+Codex 支持 MCP roots 时，插件自动读取当前会话的项目根目录，并将同一个目录传给 DSH 子代理。通常不需要填写 `cwd`；插件也会拒绝把任务提交到主会话根目录之外的路径。独立 MCP 客户端没有 roots 时，才使用 `DSH_COMMANDER_WORKDIR` 或工具参数中的绝对路径。
 
-`~/.dsh-commander/tasks/` 保存任务快照、逐行事件和每轮完整结果。工具返回最近 40 条事件、最多 16000 字符结果，并附上完整文件路径。使用返回的 `cursor` 获取后续变化。插件进度不转发模型隐藏推理；DSH 自己的原生日志仍由 DSH 管理。
+## 提供的工具
 
-`~/.dsh-commander/acpx/` 保存 ACPX 会话记录，`daemon.log` 保存控制服务诊断。插件缓存可更新，任务数据留在独立状态目录。本地 IPC 使用命名管道（Windows）或 Unix socket，并校验本地控制令牌；不监听公开网络端口。
+| 工具 | 用途 |
+| --- | --- |
+| `dsh_doctor` | 检查 DSH 路径、路由和控制服务，不调用模型。 |
+| `dsh_start_task` | 创建持久 DSH 任务并立即返回 `taskId`。 |
+| `dsh_get_task` | 读取增量进度、结果和待处理的权限请求。 |
+| `dsh_continue_task` | 在同一 DSH 会话中继续一轮指挥；忙时顺序排队。 |
+| `dsh_list_tasks` | 列出当前或历史任务，用于找回 `taskId`。 |
+| `dsh_cancel_task` | 取消当前轮和排队指令。 |
+| `dsh_close_task` | 释放 Harness 进程并保留会话历史。 |
+| `dsh_respond_permission` | 回应 DSH 发出的单次授权请求。 |
 
-## 开发与验证
+每次请求都带有独立 `requestId`。网络或工具超时后重试同一操作时复用原 ID，可避免重复提交文件写入；更改参数后必须使用新的 ID。
+
+## 任务和权限行为
+
+- 任务状态依次可能为 `queued`、`starting`、`running`、`waiting_permission`、`completed`、`failed`、`cancelled` 或 `interrupted`。
+- MCP 连接关闭后，后台控制服务仍会持有 DSH 进程；控制服务重启后，未完成任务会标为 `interrupted`，不会自动重放写入操作。
+- 同一个物理工作目录中的任务会串行执行；不同目录可按 `maxConcurrent` 并行。
+- 取消、失败或关闭不会回滚已经写入的文件。并行开发请先由主代理创建独立 Git worktree。
+- DSH 的权限策略和 Codex 的用户授权继续生效，插件不会绕过审批或切换到其他供应商。
+
+## 状态目录和清理
+
+默认状态目录为 `~/.dsh-commander/`：
+
+- `tasks/`：任务快照、事件和结果；
+- `acpx/`：ACPX 会话记录；
+- `daemon.log`：控制服务诊断日志。
+
+本地 IPC 使用命名管道（Windows）或 Unix socket，并校验控制令牌，不监听公开网络端口。完成任务后可以调用 `dsh_close_task` 释放空闲 Harness 进程；任务历史仍然保留。
+
+## 故障排查
+
+1. 先调用 `dsh_doctor`。
+2. 若提示找不到 `apps/cli/lib/bin.js`，检查 `dshRoot` 是否指向 DSH 根目录，而不是它的父目录或 `apps/cli` 子目录。
+3. 若提示供应商或模型不可用，检查 DSH 标准供应商配置、`deepseek-flash` 模型目录和 `DEEPSEEK_API_KEY` 的凭据来源。
+4. 若提示无法确定工作目录，在主 Codex 项目会话中重试；独立 MCP 客户端请设置 `DSH_COMMANDER_WORKDIR`。
+5. 任务已经被标记为 `interrupted` 时，先检查工作区和 `dsh_get_task` 的结果，再明确要求 `dsh_continue_task`，不要盲目重复提交写入任务。
+
+## 开发者验证
+
+修改源码后可运行：
 
 ```powershell
 npm ci --ignore-scripts
 npm test
 npm run build
 npm run doctor
-node scripts/e2e.mjs
+python scripts/package.py
 ```
 
-`e2e.mjs` 会真实调用已配置的模型并消耗其额度，在独立验收目录中测试文件编辑、命令执行、同会话返工、断开重连、重启恢复和取消。单元测试使用模拟后端，不调用模型。
+`npm test` 使用模拟后端，不调用模型。需要端到端验证时再运行 `node scripts/e2e.mjs`；它会使用配置的 DSH 路由并消耗模型额度。发布前请确认 ZIP 不含 `node_modules`、凭据或任务数据，并通过 Codex 插件校验器。
 
-本地运维命令（源码目录需安装开发依赖）：
+## 许可证和致谢
 
-```powershell
-node scripts/control.mjs doctor
-node scripts/control.mjs list
-node scripts/control.mjs shutdown
-```
+项目代码采用 [MIT License](LICENSE)。运行时使用 [openclaw/acpx](https://github.com/openclaw/acpx)（0.15.1）和官方 MCP SDK；依赖许可证见 `dist/THIRD_PARTY_LICENSES.txt`。
 
-`shutdown` 停止插件自己的控制服务并关闭其持有的 DSH 会话，不停止独立运行的 DSH Web 服务。下次工具调用会自动启动控制服务。
-
-## 复用来源
-
-- 运行时直接依赖 [openclaw/acpx](https://github.com/openclaw/acpx)，版本固定为 0.15.1（MIT）。
-- 使用官方 MCP SDK；供应商执行由本地 DSH 提供。
-- 调度接口设计参考 [claude-code-codex-subagents](https://github.com/xuio/claude-code-codex-subagents) 和 [codex-plugin-cc](https://github.com/openai/codex-plugin-cc)，没有复制这两个项目的源代码。
-- 打包依赖与许可证见 `dist/dependencies.json`、`dist/THIRD_PARTY_LICENSES.txt`。
+Codex 插件的 marketplace 格式和 GitHub 导入流程参见 [OpenAI 插件管理文档](https://learn.chatgpt.com/docs/enterprise/plugin-management)；插件安装与工作区权限受 Codex 账户和工作区策略控制。
