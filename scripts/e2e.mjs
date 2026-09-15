@@ -38,9 +38,9 @@ async function finish(id){
   }
   throw new Error('E2E task deadline exceeded');}
 try{
-  client=await connect();const tools=await client.listTools();assert.equal(tools.tools.length,8);
+  client=await connect();const tools=await client.listTools();assert.equal(tools.tools.length,9);
   evidence.doctor=await call('dsh_doctor');assert.equal(evidence.doctor.provider,config.provider);assert.equal(evidence.doctor.model,config.model);
-  evidence.checks.push('MCP handshake, eight tools, pinned configured route');
+  evidence.checks.push('MCP handshake, nine tools, pinned configured route');
   const first=await call('dsh_start_task',{title:'插件验收：文件与测试',requestId:runId+'-first',reasoningEffort:'low',prompt:
     '这是插件验收。在当前工作目录新建 calc.mjs，导出 add(a,b) 返回 a+b；新建 verify.mjs，用 node:assert/strict 断言 add(2,3) 等于 5，然后打印 DSH_TEST_OK。必须实际写文件，并通过 shell 运行 node verify.mjs。只能操作当前目录，不联网、不安装依赖。完成后简短报告。请记住本次会话口令是 BLUE_RIVER_714，但不要把口令写到文件中。'});
   taskId=first.taskId;const repeated=await call('dsh_start_task',{title:'插件验收：文件与测试',requestId:runId+'-first',reasoningEffort:'low',prompt:

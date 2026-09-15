@@ -1,6 +1,6 @@
 /**
  * Verify the built dist/server.mjs bundle itself: imports cleanly, exposes the
- * eight tools with the new protocol parameters, and answers doctor.
+ * nine tools with the new protocol parameters, and answers doctor.
  *
  * The run is fully isolated: it uses a temporary DSH_COMMANDER_HOME with its own
  * config file, so it never reads the live configuration, never touches the live
@@ -30,7 +30,7 @@ try{
   await client.connect(new StdioClientTransport({command:process.execPath,args:[path.join(root,'dist/server.mjs')],env,stderr:'pipe'}));
   evidence.checks.push('dist/server.mjs starts and completes the MCP handshake');
   const listed=await client.listTools();
-  assert.equal(listed.tools.length,8,'the bundle exposes the same eight tools');
+  assert.equal(listed.tools.length,9,'the bundle exposes the same nine tools');
   const byName=Object.fromEntries(listed.tools.map(tool=>[tool.name,tool]));
   evidence.tools=listed.tools.map(tool=>({name:tool.name,parameters:Object.keys(tool.inputSchema?.properties??{})}));
   for(const name of ['dsh_doctor','dsh_start_task','dsh_get_task','dsh_continue_task','dsh_list_tasks','dsh_cancel_task','dsh_close_task','dsh_respond_permission'])assert.ok(byName[name],`missing tool ${name}`);

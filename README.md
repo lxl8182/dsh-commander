@@ -1,9 +1,11 @@
 # DSH Commander
 
+<p align="center"><img src="assets/commander.jpg" alt="DSH Commander：快给我干活！" width="480" /></p>
+
 让 Codex 主会话（例如 GPT-6）指挥一个完整的 DeepSeek Harness（DSH）子代理。DSH 保留自己的上下文、工具、执行循环和持久会话；Codex 负责拆解任务、查看结果、继续返工和最终验收。
 
 ```text
-Codex 主会话 → DSH Commander MCP → DSH Web / ACP → DeepSeek 标准供应商
+Codex 主会话 → DSH Commander MCP → DSH Web / ACP → 所选供应商与模型（默认 DeepSeek 官方）
 ```
 
 插件会把 DSH 子代理放在当前 Codex 会话的工作目录中。子代理可以读写项目文件、执行命令并跨多轮继续工作，主会话可以随时查询进度或要求返工。
@@ -65,7 +67,7 @@ codex plugin add dsh-commander@dsh-commander-marketplace
    - **Web（需要界面同步时推荐）**：启动现有 DSH Web 服务，配置下方的 `dshBackend` 和 `dshWebUrl`。Commander 在同一 Web 进程中创建工作区会话，界面直接接收实时输出。
    - **npm**：无需源码 checkout，首次启动时由 `npx` 解析 `@deepseek-ai/dsh` 包。
    - **source**：安装 pnpm，准备一个已构建并支持 ACP 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) checkout；先在仓库根目录运行 `pnpm install`、`pnpm run build`，该目录必须包含 `apps/cli/lib/bin.js`。
-3. 在 DSH 中启用 DeepSeek 标准供应商，并准备它所需的凭据。默认路由为 `deepseek-official / deepseek-flash`，凭据引用为 `DEEPSEEK_API_KEY`。
+3. 在 DSH 中启用所需供应商并准备其凭据。默认路由为 `deepseek-official / deepseek-flash`，默认凭据引用为 `DEEPSEEK_API_KEY`；使用 littleapi 等自定义供应商时，先在 DSH 中配置该供应商和实际模型 ID。
 4. 在 Codex 中打开要处理的项目，并确认插件已安装且启用。
 
 插件不会把 DeepSeek 密钥写入配置、发送到 Codex，或要求用户在聊天中粘贴密钥；凭据由 DSH 在请求时读取。Codex 的订阅登录和 DeepSeek 的供应商凭据是两套独立配置。
@@ -129,7 +131,7 @@ codex plugin add dsh-commander@dsh-commander-marketplace
 | `dshLaunchMode` | DSH 启动方式：`npm` 或 `source`。 |
 | `dshPackage` | npm 模式的包规格，默认 `@deepseek-ai/dsh@latest`，可改为固定版本或 `next` 标签。 |
 | `dshRoot` | source 模式的 DSH 根目录，必须是绝对路径并能找到 `apps/cli/lib/bin.js`。npm 模式不需要。 |
-| `provider` / `model` | DSH ACP 使用的路由，默认 `deepseek-official` / `deepseek-flash`。 |
+| `provider` / `model` | Web 与 ACP 新任务的默认路由，默认 `deepseek-official` / `deepseek-flash`；创建任务时可成对覆盖。 |
 | `reasoningEffort` | 传给 DSH 的推理强度。 |
 | `maxConcurrent` | 不同工作目录最多同时运行的任务数，范围 1–16。 |
 | `turnTimeoutMs` | 单轮任务超时，默认 30 分钟。 |
@@ -144,7 +146,36 @@ codex plugin add dsh-commander@dsh-commander-marketplace
 | `DSH_HOME` | 指定 DSH 的状态和凭据目录。 |
 | `DSH_COMMANDER_WORKDIR` | 没有 MCP roots 时指定兼容工作目录。 |
 
-改完配置后重新打开 Codex 任务，或重启插件控制服务。`dsh_doctor` 可以在不发送模型请求的情况下检查启动方式、DSH 路径（source 模式）、路由和凭据引用。
+全局配置在 Commander 控制服务启动时读取。改完配置后，需要在现有任务结束后重启 Commander 控制服务；仅新开 Codex 任务不保证长驻控制服务重新加载配置。安装新增工具的版本后，还需新开 Codex 任务以加载工具定义。`dsh_doctor` 可以在不发送模型请求的情况下检查启动方式、DSH 路径（source 模式）、路由和凭据引用。
+
+### 为子代理选择供应商与模型
+
+默认配置保持 `deepseek-official / deepseek-flash`。可以在创建任务时选择另一组路由，不需要修改全局默认，也不改变 Codex 主会话模型。
+
+1. 调用 `dsh_list_routes` 查看 DSH 配置中的供应商和模型 ID。返回值只包含路由元数据，不包含密钥或 API 地址；候选列表不代表远端模型已验证可用。
+2. 创建任务时同时传入 `provider` 与 `model`。两项都省略时使用全局默认；只传一项会报错，避免错误搭配。
+3. 后端在每轮执行前确认所选路由，无法使用时明确失败，不静默换到官方供应商。续接、关闭后恢复都保留任务创建时的路由；要换供应商或模型，请新建任务。
+
+例如可以直接说：
+
+> 使用 DSH Commander，先列出 littleapi 的模型；使用我选定的模型完成当前任务，默认配置继续保留官方。
+
+底层 `dsh_start_task` 参数示例（模型 ID 必须替换为 DSH 中实际配置的值）：
+
+```json
+{
+  "cwd": "C:/path/to/project",
+  "title": "实现指定功能",
+  "prompt": "按已确认范围实现功能。",
+  "requestId": "feature-littleapi-001",
+  "provider": "littleapi",
+  "model": "<DSH 中实际配置的模型 ID>"
+}
+```
+
+如果希望以后新任务都默认使用 littleapi，在 `~/.dsh-commander/config.json` 中同时修改 `provider` 和 `model`；其余后端配置保留原值。凭据仍由 DSH 管理，不填写到 Commander 配置或任务参数里。
+
+`dsh_doctor` 也接受成对的 `provider` / `model`，用于只读检查指定路由的本地配置，不调用模型，不证明凭据或远端服务有效。自定义模型还需支持任务使用的推理强度；Commander 不猜测能力或自动回退。
 
 ## 开始一个任务
 
@@ -168,7 +199,8 @@ DSH 自行加载自己的 agent 指令与环境配置。任务卡只传目标、
 | 工具 | 用途 |
 | --- | --- |
 | `dsh_doctor` | 检查 DSH 路径、路由和控制服务，不调用模型；并报告控制服务跳过了多少个不可读的任务快照。 |
-| `dsh_start_task` | 创建持久 DSH 任务并立即返回 `taskId` 与精简状态。 |
+| `dsh_list_routes` | 列出 DSH 本地配置的供应商与模型候选，供创建任务时选择；不调用模型。 |
+| `dsh_start_task` | 创建持久 DSH 任务，可成对指定 `provider` / `model`，立即返回 `taskId` 与精简状态。 |
 | `dsh_get_task` | 等待可行动状态并读取结构化报告、待处理权限。 |
 | `dsh_continue_task` | 在同一 DSH 会话中继续一轮指挥；忙时顺序排队。 |
 | `dsh_list_tasks` | 列出当前或历史任务，用于找回 `taskId`。 |
